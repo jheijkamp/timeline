@@ -1,7 +1,3 @@
-[Unit]
-Description=Timeline Python Service
-After=network.target
-
 [Service]
 Type=simple
 User=jan
@@ -12,10 +8,7 @@ ExecStart=/volume1/web/timeline/.venv/bin/python /volume1/web/timeline/timeline.
 Restart=always
 RestartSec=10
 
-StandardOutput=append:/volume1/web/timeline/timeline_stdout.log
-StandardError=append:/volume1/web/timeline/timeline_stderr.log
+StandardOutput=journal
+StandardError=journal
 
 Environment=PYTHONUNBUFFERED=1
-
-[Install]
-WantedBy=multi-user.target
