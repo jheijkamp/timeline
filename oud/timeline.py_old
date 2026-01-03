@@ -1,0 +1,46 @@
+from flask import Flask, request, jsonify
+import sqlite3
+import os
+from datetime import datetime
+import pytz
+
+app = Flask(__name__)
+DB_PATH = os.path.join(os.path.dirname(__file__), "location_data.db")
+local_tz = pytz.timezone('Europe/Amsterdam')
+
+def init_db():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute('''CREATE TABLE IF NOT EXISTS locations 
+                        (tst INTEGER, readable_time TEXT, lat REAL, lon REAL, vel REAL, alt REAL, device TEXT)''')
+
+@app.route('/pub', methods=['POST'])
+def receive_location():
+    data = request.json
+    if not data:
+        return jsonify({"error": "No JSON"}), 400
+
+    # Alleen verwerken als het een locatie-bericht is
+    if data.get('_type') == 'location':
+        try:
+            tst = data.get('tst')
+            # Omzetten naar leesbare tijd
+            dt_utc = datetime.fromtimestamp(tst, pytz.utc)
+            dt_nl = dt_utc.astimezone(local_tz)
+            readable_time = dt_nl.strftime('%Y-%m-%d %H:%M:%S')
+
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute("INSERT INTO locations VALUES (?, ?, ?, ?, ?, ?, ?)",
+                             (tst, readable_time, data.get('lat'), data.get('lon'), 
+                              data.get('vel', 0), data.get('alt', 0), data.get('tid', 'unknown')))
+            print(f"Opgeslagen: {readable_time} - {data.get('lat')},{data.get('lon')}")
+            return jsonify({"status": "ok"}), 200
+        except Exception as e:
+            print(f"Fout bij verwerken locatie: {e}")
+            return jsonify({"error": str(e)}), 500
+    
+    # Negeer status-berichten geruisloos
+    return jsonify({"status": "ignored", "type": data.get('_type')}), 200
+
+if __name__ == '__main__':
+    init_db()
+    app.run(host='0.0.0.0', port=5000)

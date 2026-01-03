@@ -1,0 +1,4 @@
+Api variabelen
+https://owntracks.org/booklet/tech/json/
+
+
