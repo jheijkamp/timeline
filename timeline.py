@@ -97,11 +97,24 @@ def receive_location():
     global last_saved_point, db
 
     data = request.get_json(force=True)
-    
+
+    msg_type = data.get("_type")
+
+    # 👉 Alleen location-berichten verwerken
+    if msg_type != "location":
+        print(f"Niet-locatie bericht genegeerd: type={msg_type}")
+        return "ignored", 200
 
     lat = data.get("lat")
     lon = data.get("lon")
     acc = data.get("acc")
+    
+    print(
+    f"type={msg_type}, "
+    f"lat={data.get('lat')}, "
+    f"acc={data.get('acc')}"
+)
+
 
     if lat is None or lon is None or acc is None:
         print("Ongeldige data ontvangen:", data)

@@ -3,7 +3,7 @@ import time
 
 # Instellingen
 # NAS_URL = "http://192.168.1.200:5000/pub"  # Pas IP aan naar je NAS
-NAS_URL = "http://192.168.1.200:5000/pub"  # Pas IP aan naar je NAS
+NAS_URL = "http://192.168.1.78:5000/pub"  # Pas IP aan naar je NAS
 
 
 def stuur_test_locatie(lat, lon, tid="test-laptop"):
@@ -18,7 +18,7 @@ def stuur_test_locatie(lat, lon, tid="test-laptop"):
         "cog": 0,  # Richting 0 graden
         "conn": "w",  # 1 = GPS, 2 = WiFi, 3 = Fused (GPS + WiFi)
         "created_at": 1767293077,  # `{timestamp}`
-        "lat": 52.1440381,
+        "lat": 52.1480381,
         "lon": 5.3213312, 
         "m": 1,  # 1 = GPS, 2 = WiFi, 3 = Fused (GPS + WiFi)
         "source": "fused",  # 1 = GPS, 2 = WiFi, 3 = Fused (GPS + WiFi)
