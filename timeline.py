@@ -1,31 +1,26 @@
+
 #!/usr/bin/env python3
 
-from flask import Flask, request
-from flask import render_template
-import sqlite3
-import time
+from flask import Flask, request, render_template
+import mysql.connector
+from mysql.connector import Error
+import folium
 from math import radians, sin, cos, sqrt, atan2
 from collections import deque
-from datetime import datetime
-import os
+from datetime import datetime, timedelta
 import pytz
-
+from config import DB_CONFIG
 
 # =====================
 # CONFIGURATIE
 # =====================
 
-# DB_PATH = "/volume1/web/timeline/location_data.db"
-DB_PATH = "/home/jan/code_github/timeline/location_data.db"
 
-MAX_ACC = 20        # meter – alles erboven weggooien
-MIN_DIST = 3        # meter – minimale verplaatsing
-SMOOTH_WINDOW = 3   # aantal punten voor smoothing
+
+MAX_ACC = 20        
+MIN_DIST = 3        
+SMOOTH_WINDOW = 3   
 local_tz = pytz.timezone('Europe/Amsterdam')
-
-# =====================
-# FLASK APP
-# =====================
 
 app = Flask(__name__)
 
@@ -34,50 +29,49 @@ app = Flask(__name__)
 # =====================
 
 def distance_m(lat1, lon1, lat2, lon2):
-    """Bereken afstand tussen twee GPS-punten in meters"""
     R = 6371000
     dlat = radians(lat2 - lat1)
     dlon = radians(lon2 - lon1)
     a = sin(dlat / 2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2)**2
     return R * 2 * atan2(sqrt(a), sqrt(1 - a))
 
+def get_db_connection():
+    return mysql.connector.connect(**DB_CONFIG)
 
 def init_db():
-    """Initialiseer database indien nodig"""
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS locations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            readable_time TEXT,
-            SSID TEXT,
-            acc REAL,
-            alt REAL,
-            batt INTEGER,
-            bs INTEGER,
-            cog REAL,
-            conn TEXT,
-            created_at INTEGER,
-            lat REAL,
-            lon REAL,
-            m INTEGER,
-            source TEXT,
-            tid TEXT,
-            topic TEXT,
-            vac REAL,
-            vel REAL,
-            timestamp INTEGER
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-
-def get_db():
-    """Open database"""
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
-
+    """Initialiseer MariaDB tabel"""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS locations (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                readable_time DATETIME,
+                SSID VARCHAR(255),
+                acc FLOAT,
+                alt FLOAT,
+                batt INT,
+                bs INT,
+                cog FLOAT,
+                conn VARCHAR(50),
+                created_at BIGINT,
+                lat DOUBLE,
+                lon DOUBLE,
+                m INT,
+                source VARCHAR(50),
+                tid VARCHAR(10),
+                topic VARCHAR(255),
+                vac FLOAT,
+                vel FLOAT,
+                timestamp BIGINT,
+                INDEX (readable_time)
+            )
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Error as e:
+        print(f"Fout bij init DB: {e}")
 
 # =====================
 # STATE (IN MEMORY)
@@ -86,157 +80,132 @@ def get_db():
 last_points = deque(maxlen=SMOOTH_WINDOW)
 last_saved_point = None
 
-db = None
-
 # =====================
 # ROUTES
 # =====================
 
 @app.route("/pub", methods=["POST"])
 def receive_location():
-    global last_saved_point, db
+    global last_saved_point
 
     data = request.get_json(force=True)
-
-    msg_type = data.get("_type")
-
-    # 👉 Alleen location-berichten verwerken
-    if msg_type != "location":
-        print(f"Niet-locatie bericht genegeerd: type={msg_type}")
+    if data.get("_type") != "location":
         return "ignored", 200
 
-    lat = data.get("lat")
-    lon = data.get("lon")
-    acc = data.get("acc")
+    lat, lon, acc = data.get("lat"), data.get("lon"), data.get("acc")
     
-    print(
-    f"type={msg_type}, "
-    f"lat={data.get('lat')}, "
-    f"acc={data.get('acc')}"
-)
-
-
     if lat is None or lon is None or acc is None:
-        print("Ongeldige data ontvangen:", data)
         return "bad request", 400
 
-    # 1️⃣ Accuracy-filter
     if acc > MAX_ACC:
-        print(f"GPS punt genegeerd (acc={acc}m)")
         return "ignored", 200
 
-    # 2️⃣ Minimum-afstand filter
     if last_saved_point:
-        dist = distance_m(
-            last_saved_point[0],
-            last_saved_point[1],
-            lat,
-            lon
-        )
+        dist = distance_m(last_saved_point[0], last_saved_point[1], lat, lon)
         if dist < MIN_DIST:
-            print(f"Punt genegeerd (afstand={dist:.1f}m)")
             return "ignored", 200
 
-    # 3️⃣ Smoothing
     last_points.append((lat, lon))
-
     if len(last_points) < SMOOTH_WINDOW:
-        print("Bufferen voor smoothing...")
         return "buffering", 200
 
     lat_smooth = sum(p[0] for p in last_points) / len(last_points)
     lon_smooth = sum(p[1] for p in last_points) / len(last_points)
 
     tst = data.get('tst')
-    # Omzetten naar leesbare tijd
-    dt_utc = datetime.fromtimestamp(tst, pytz.utc)
-    dt_nl = dt_utc.astimezone(local_tz)
+    dt_nl = datetime.fromtimestamp(tst, pytz.utc).astimezone(local_tz)
     readable_time = dt_nl.strftime('%Y-%m-%d %H:%M:%S')
 
-    # Opslaan
     try:
-        cur = db.cursor()
-        cur.execute("""
-                    INSERT INTO locations (
-                    readable_time,
-                    SSID,
-                    acc,
-                    alt,
-                    batt,
-                    bs,
-                    cog,
-                    conn,
-                    created_at,
-                    lat,
-                    lon,
-                    m,
-                    source,
-                    tid,
-                    topic,
-                    vac,
-                    vel,
-                    timestamp
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-                    )""",
-                    (
-                        readable_time,
-                        data.get("SSID"),
-                        acc,
-                        data.get("alt"),
-                        data.get("batt"),
-                        data.get("bs"),
-                        data.get("cog"),
-                        data.get("conn"),
-                        data.get("created_at"),
-                        lat,
-                        lon,
-                        data.get("m"),
-                        data.get("source"),
-                        data.get("tid"),
-                        data.get("topic"),
-                        data.get("vac"),
-                        data.get("vel"),
-                        tst)
-                    )
-        db.commit()
+        conn = get_db_connection()
+        cur = conn.cursor()
+        sql = """INSERT INTO locations (readable_time, SSID, acc, alt, batt, bs, cog, conn, 
+                 created_at, lat, lon, m, source, tid, topic, vac, vel, timestamp) 
+                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+        
+        cur.execute(sql, (readable_time, data.get("SSID"), acc, data.get("alt"),
+                          data.get("batt"), data.get("bs"), data.get("cog"), data.get("conn"),
+                          data.get("created_at"), lat, lon, data.get("m"),
+                          data.get("source"), data.get("tid"), data.get("topic"),
+                          data.get("vac"), data.get("vel"), tst))
+        conn.commit()
+        cur.close()
+        conn.close()
         last_saved_point = (lat_smooth, lon_smooth)
-
-        print(
-            f"Opgeslagen: lat={lat_smooth:.6f}, "
-            f"lon={lon_smooth:.6f}, acc={acc}m, "
-            f"time={readable_time}"
-            )
-
-    except Exception as e:
-        print("Fout bij opslaan in DB:", e)
+        print(f"Opgeslagen: {readable_time}")
+    except Error as e:
+        print("Fout bij opslaan:", e)
         return "error", 500
 
     return "ok", 200
 
-
 @app.route("/")
 def index():
+    # 1. Datum bepalen (nu met extra check op lege string)
+    day_query = request.args.get('day')
+    
+    if day_query and day_query.strip():  # Als 'day' bestaat en niet leeg is
+        day_str = day_query
+    else:
+        # Val terug op vandaag als 'day' leeg of afwezig is
+        day_str = datetime.now(local_tz).strftime('%Y-%m-%d')
+    
+    # 2. Data ophalen uit MariaDB
+    points = []
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(dictionary=True)
+        # We gebruiken DATE() omdat de kolom een DATETIME is
+        cur.execute("""
+            SELECT lat, lon, readable_time 
+            FROM locations 
+            WHERE DATE(readable_time) = %s 
+            ORDER BY timestamp ASC
+        """, (day_str,))
+        points = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Error as e:
+        print(f"❌ Fout bij ophalen: {e}")
+
+    # 3. Folium Kaart genereren
+    if points:
+        # Middelpunt bepalen op basis van het gemiddelde van de punten
+        avg_lat = sum(p['lat'] for p in points) / len(points)
+        avg_lon = sum(p['lon'] for p in points) / len(points)
+        
+        m = folium.Map(location=[avg_lat, avg_lon], zoom_start=13)
+        
+        path = [[p['lat'], p['lon']] for p in points]
+        folium.PolyLine(path, color="blue", weight=5, opacity=0.7).add_to(m)
+        
+        folium.Marker(path[0], popup="Start", icon=folium.Icon(color='green')).add_to(m)
+        folium.Marker(path[-1], popup="Einde", icon=folium.Icon(color='red')).add_to(m)
+        
+        map_html = m._repr_html_()
+    else:
+        # Als er geen punten zijn, toon een lege kaart of melding
+        map_html = f"<div style='padding:20px;'>Geen ritten gevonden op {day_str}.</div>"
+
+    # 4. Navigatie data
+    try:
+        current_dt = datetime.strptime(day_str, '%Y-%m-%d')
+        prev_day = (current_dt - timedelta(days=1)).strftime('%Y-%m-%d')
+        next_day = (current_dt + timedelta(days=1)).strftime('%Y-%m-%d')
+    except ValueError:
+        # Mocht er toch een foute datumnotatie doorkomen
+        day_str = datetime.now(local_tz).strftime('%Y-%m-%d')
+        prev_day = (datetime.now(local_tz) - timedelta(days=1)).strftime('%Y-%m-%d')
+        next_day = (datetime.now(local_tz) + timedelta(days=1)).strftime('%Y-%m-%d')
+
     return render_template(
         "timeline.html",
-        day=day,
+        day=day_str,
         prev=prev_day,
         next=next_day,
         map=map_html
-)
-
-
-# =====================
-# MAIN
-# =====================
+    )
 
 if __name__ == "__main__":
-    print("Controleren database op:", DB_PATH)
     init_db()
-    db = get_db()
-    print("Database is gereed.")
-
-    app.run(
-        host="0.0.0.0",
-        port=5000,
-        debug=False
-    )
+    app.run(host="0.0.0.0", port=5000)

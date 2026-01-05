@@ -9,7 +9,8 @@ NAS_URL = "http://192.168.1.78:5000/pub"  # Pas IP aan naar je NAS
 def stuur_test_locatie(lat, lon, tid="test-laptop"):
     payload = {
         "BSSID": "78:d3:8d:fd:09:dd",
-        "SSID": "weiler13",  # SSID point
+        "SSID": "weiler12",  # SSID point
+        "_type": "location",
         "_id": "dfcb9056",  # Unieke ID voor dit bericht
         "acc": 5,  # Nauwkeurigheid 5m
         "alt": 54,  # Hoogte 12m
@@ -18,7 +19,7 @@ def stuur_test_locatie(lat, lon, tid="test-laptop"):
         "cog": 0,  # Richting 0 graden
         "conn": "w",  # 1 = GPS, 2 = WiFi, 3 = Fused (GPS + WiFi)
         "created_at": 1767293077,  # `{timestamp}`
-        "lat": 52.1480381,
+        "lat": 52.1885381,
         "lon": 5.3213312, 
         "m": 1,  # 1 = GPS, 2 = WiFi, 3 = Fused (GPS + WiFi)
         "source": "fused",  # 1 = GPS, 2 = WiFi, 3 = Fused (GPS + WiFi)
