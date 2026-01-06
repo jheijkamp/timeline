@@ -4,12 +4,13 @@
 from flask import Flask, request, render_template
 import mysql.connector
 from mysql.connector import Error
-import folium
+# import folium
 from math import radians, sin, cos, sqrt, atan2
 from collections import deque
 from datetime import datetime, timedelta
 import pytz
 from config import DB_CONFIG
+import json
 
 # =====================
 # CONFIGURATIE
@@ -141,23 +142,20 @@ def receive_location():
 
 @app.route("/")
 def index():
-    # 1. Datum bepalen (nu met extra check op lege string)
-    day_query = request.args.get('day')
-    
-    if day_query and day_query.strip():  # Als 'day' bestaat en niet leeg is
-        day_str = day_query
-    else:
-        # Val terug op vandaag als 'day' leeg of afwezig is
+    day_str = request.args.get('day')
+    if not day_str or not day_str.strip():
         day_str = datetime.now(local_tz).strftime('%Y-%m-%d')
     
-    # 2. Data ophalen uit MariaDB
     points = []
     try:
         conn = get_db_connection()
         cur = conn.cursor(dictionary=True)
-        # We gebruiken DATE() omdat de kolom een DATETIME is
+        # We gebruiken CAST(... AS CHAR) om de datum direct als tekst op te halen
         cur.execute("""
-            SELECT lat, lon, readable_time 
+            SELECT 
+                lat, 
+                lon, 
+                CAST(readable_time AS CHAR) as readable_time 
             FROM locations 
             WHERE DATE(readable_time) = %s 
             ORDER BY timestamp ASC
@@ -166,44 +164,19 @@ def index():
         cur.close()
         conn.close()
     except Error as e:
-        print(f"❌ Fout bij ophalen: {e}")
+        print(f"Database error: {e}")
 
-    # 3. Folium Kaart genereren
-    if points:
-        # Middelpunt bepalen op basis van het gemiddelde van de punten
-        avg_lat = sum(p['lat'] for p in points) / len(points)
-        avg_lon = sum(p['lon'] for p in points) / len(points)
-        
-        m = folium.Map(location=[avg_lat, avg_lon], zoom_start=13)
-        
-        path = [[p['lat'], p['lon']] for p in points]
-        folium.PolyLine(path, color="blue", weight=5, opacity=0.7).add_to(m)
-        
-        folium.Marker(path[0], popup="Start", icon=folium.Icon(color='green')).add_to(m)
-        folium.Marker(path[-1], popup="Einde", icon=folium.Icon(color='red')).add_to(m)
-        
-        map_html = m._repr_html_()
-    else:
-        # Als er geen punten zijn, toon een lege kaart of melding
-        map_html = f"<div style='padding:20px;'>Geen ritten gevonden op {day_str}.</div>"
-
-    # 4. Navigatie data
-    try:
-        current_dt = datetime.strptime(day_str, '%Y-%m-%d')
-        prev_day = (current_dt - timedelta(days=1)).strftime('%Y-%m-%d')
-        next_day = (current_dt + timedelta(days=1)).strftime('%Y-%m-%d')
-    except ValueError:
-        # Mocht er toch een foute datumnotatie doorkomen
-        day_str = datetime.now(local_tz).strftime('%Y-%m-%d')
-        prev_day = (datetime.now(local_tz) - timedelta(days=1)).strftime('%Y-%m-%d')
-        next_day = (datetime.now(local_tz) + timedelta(days=1)).strftime('%Y-%m-%d')
+    # Bereken navigatie
+    current_dt = datetime.strptime(day_str, '%Y-%m-%d')
+    prev_day = (current_dt - timedelta(days=1)).strftime('%Y-%m-%d')
+    next_day = (current_dt + timedelta(days=1)).strftime('%Y-%m-%d')
 
     return render_template(
         "timeline.html",
         day=day_str,
         prev=prev_day,
         next=next_day,
-        map=map_html
+        points_json=json.dumps(points) # Cruciaal: zet de lijst om naar tekst
     )
 
 if __name__ == "__main__":

@@ -3,3 +3,4 @@ sqlite3
 json
 folium
 pytz
+pip install mysql-connector-python

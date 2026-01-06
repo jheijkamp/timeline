@@ -1,78 +1,143 @@
 <!DOCTYPE html>
-<html>
+<html lang="nl">
 <head>
-    <meta charset="utf-8">
-    <title>Timeline</title>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motor Timeline - {{ day }}</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
     <style>
-    html, body {
-        margin: 0;
-        padding: 0;
-        height: 100%;
-    }
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden; /* Voorkomt dubbele scrollbalken */
+            font-family: sans-serif;
+        }
 
-    #toolbar {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
+        /* De kaart vult het hele scherm */
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 1;
+        }
 
-        height: 42px;
-        background: #ffffff;
-        border-bottom: 1px solid #ccc;
+        /* De navigatie zweeft over de kaart heen */
+        .overlay-nav {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000; /* Zorg dat dit boven de kaart ligt */
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px 20px;
+            border-radius: 50px;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.2);
+        }
 
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+        .nav-btn {
+            text-decoration: none;
+            color: #333;
+            font-weight: bold;
+            padding: 5px 10px;
+        }
 
-        padding: 0 10px;
-        font-family: sans-serif;
-        font-size: 14px;
-
-        z-index: 1000;
-    }
-
-    #toolbar .title {
-        font-weight: bold;
-    }
-
-    #toolbar .nav {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
-    #toolbar a {
-        text-decoration: none;
-        font-weight: bold;
-        color: #0077cc;
-    }
-
-    #map {
-        position: absolute;
-        top: 42px;
-        left: 0;
-        right: 0;
-        bottom: 0;
-    }
+        .stats-overlay {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+        }
     </style>
-</head>
 
+<div class="overlay-nav">
+    <a href="/?day={{ prev }}" class="nav-btn">❮</a>
+    <span style="font-size: 14px;">{{ day }}</span>
+    <a href="/?day={{ next }}" class="nav-btn">❯</a>
+</div>
+
+<div id="map"></div>
+
+<div class="stats-overlay">
+    Punten: {{ points_json|length if points_json else 0 }}
+</div>
+</head>
 <body>
 
-<div id="toolbar">
-    <span class="title">Timeline</span>
+<div class="container">
+    <header>
+        <a href="/?day={{ prev }}" class="nav-btn">← Vorige</a>
+        <h2>📅 {{ day }}</h2>
+        <a href="/?day={{ next }}" class="nav-btn">Volgende →</a>
+    </header>
 
-    <div class="nav">
-        <a href="/?day={{ prev }}">⬅</a>
-        <span>{{ day }}</span>
-        <a href="/?day={{ next }}">➡</a>
-    </div>
+    {% if points_json != "[]" %}
+        <div id="map"></div>
+        <div class="stats" id="stats-box">
+            Data punten geladen: <span id="point-count">0</span>
+        </div>
+    {% else %}
+        <div class="no-data">
+            <p>Geen ritten gevonden voor deze dag.</p>
+        </div>
+    {% endif %}
 </div>
 
-<div id="map">
-    {{ map|safe }}
-</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+    // 1. Data vanuit Python (Flask) veilig inladen
+    const rawData = {{ points_json | safe }};
+    
+    if (rawData && rawData.length > 0) {
+        document.getElementById('point-count').innerText = rawData.length;
+
+        // 2. Kaart initialiseren op het eerste punt
+        const map = L.map('map');
+
+        // 3. OpenStreetMap tegels toevoegen
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // 4. Punten omzetten naar Leaflet formaat [lat, lon]
+        const path = rawData.map(p => [p.lat, p.lon]);
+
+        // 5. De route tekenen (Polyline)
+        const polyline = L.polyline(path, {
+            color: '#007bff',
+            weight: 5,
+            opacity: 0.8,
+            lineJoin: 'round'
+        }).addTo(map);
+
+        // 6. Start en Eind markers met popups
+        const startPoint = path[0];
+        const endPoint = path[path.length - 1];
+
+        L.marker(startPoint).addTo(map)
+            .bindPopup("<b>Start</b><br>" + rawData[0].readable_time);
+
+        L.marker(endPoint).addTo(map)
+            .bindPopup("<b>Laatste punt</b><br>" + rawData[rawData.length - 1].readable_time);
+
+        // 7. Automatisch zoomen naar de route
+        map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+    }
+</script>
 
 </body>
 </html>
