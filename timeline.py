@@ -133,10 +133,9 @@ def receive_location():
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        sql = """INSERT INTO locations (readable_time, lat, lon, acc, timestamp, ...) 
-                 VALUES (%s, %s, %s, %s, %s, ...)"""
-        # ... vul hier de rest van je insert aan ...
-        cur.execute(sql, (readable_time, lat, lon, acc, tst, ...))
+        sql = """INSERT INTO locations (readable_time, lat, lon, acc, timestamp, vel) 
+         VALUES (%s, %s, %s, %s, %s, %s)"""
+        cur.execute(sql, (readable_time, lat, lon, acc, tst, data.get('vel', 0)))
         conn.commit()
         cur.close()
         conn.close()
