@@ -4,12 +4,11 @@
 from flask import Flask, request, render_template
 import mysql.connector
 from mysql.connector import Error
-# import folium
 from math import radians, sin, cos, sqrt, atan2
 from collections import deque
 from datetime import datetime, timedelta
 import pytz
-from config import DB_CONFIG
+from config import DB_CONFIG, STATIONARY_RADIUS, STATIONARY_TIME
 import json
 
 # =====================
@@ -88,52 +87,63 @@ last_saved_point = None
 @app.route("/pub", methods=["POST"])
 def receive_location():
     global last_saved_point
-
+    
     data = request.get_json(force=True)
     if data.get("_type") != "location":
         return "ignored", 200
 
     lat, lon, acc = data.get("lat"), data.get("lon"), data.get("acc")
-    
-    if lat is None or lon is None or acc is None:
-        return "bad request", 400
+    tst = data.get('tst')
 
-    if acc > MAX_ACC:
+    # 1. Basis filters (Accuracy)
+    if lat is None or lon is None or acc > MAX_ACC:
         return "ignored", 200
 
+    # 2. Stilstand filter
     if last_saved_point:
+        # last_saved_point formaat: (lat, lon, timestamp)
         dist = distance_m(last_saved_point[0], last_saved_point[1], lat, lon)
-        if dist < MIN_DIST:
-            return "ignored", 200
+        time_diff = tst - last_saved_point[2]
 
+        # Ben je binnen de straal?
+        if dist < STATIONARY_RADIUS:
+            # Ben je hier al langer dan de STATIONARY_TIME?
+            if time_diff > STATIONARY_TIME:
+                # We slaan dit punt niet op, want we staan al stil op deze plek
+                print(f"Stilstand gedetecteerd (> {STATIONARY_TIME}s), punt genegeerd.")
+                return "stationary ignored", 200
+        
+        # Ben je nog heel dichtbij het vorige punt (tegen jitter), maar nog niet lang genoeg?
+        if dist < MIN_DIST:
+             return "too close ignored", 200
+
+    # 3. Smoothing (optioneel, als je dit nog gebruikt)
     last_points.append((lat, lon))
     if len(last_points) < SMOOTH_WINDOW:
         return "buffering", 200
-
+    
     lat_smooth = sum(p[0] for p in last_points) / len(last_points)
     lon_smooth = sum(p[1] for p in last_points) / len(last_points)
 
-    tst = data.get('tst')
+    # 4. Opslaan in MariaDB
     dt_nl = datetime.fromtimestamp(tst, pytz.utc).astimezone(local_tz)
     readable_time = dt_nl.strftime('%Y-%m-%d %H:%M:%S')
 
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        sql = """INSERT INTO locations (readable_time, SSID, acc, alt, batt, bs, cog, conn, 
-                 created_at, lat, lon, m, source, tid, topic, vac, vel, timestamp) 
-                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
-        
-        cur.execute(sql, (readable_time, data.get("SSID"), acc, data.get("alt"),
-                          data.get("batt"), data.get("bs"), data.get("cog"), data.get("conn"),
-                          data.get("created_at"), lat, lon, data.get("m"),
-                          data.get("source"), data.get("tid"), data.get("topic"),
-                          data.get("vac"), data.get("vel"), tst))
+        sql = """INSERT INTO locations (readable_time, lat, lon, acc, timestamp, ...) 
+                 VALUES (%s, %s, %s, %s, %s, ...)"""
+        # ... vul hier de rest van je insert aan ...
+        cur.execute(sql, (readable_time, lat, lon, acc, tst, ...))
         conn.commit()
         cur.close()
         conn.close()
-        last_saved_point = (lat_smooth, lon_smooth)
-        print(f"Opgeslagen: {readable_time}")
+
+        # Update het laatste punt met de huidige locatie en TIJD
+        last_saved_point = (lat, lon, tst)
+        print(f"✅ Locatie opgeslagen: {readable_time} (Afstand: {dist:.1f}m)")
+
     except Error as e:
         print("Fout bij opslaan:", e)
         return "error", 500
