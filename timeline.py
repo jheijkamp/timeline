@@ -38,6 +38,7 @@ def distance_m(lat1, lon1, lat2, lon2):
 def get_db_connection():
     return mysql.connector.connect(**DB_CONFIG)
 
+
 def init_db():
     """Initialiseer MariaDB tabel"""
     try:
@@ -162,14 +163,15 @@ def index():
         cur = conn.cursor(dictionary=True)
         # We gebruiken CAST(... AS CHAR) om de datum direct als tekst op te halen
         cur.execute("""
-            SELECT 
-                lat, 
-                lon, 
-                CAST(readable_time AS CHAR) as readable_time 
-            FROM locations 
-            WHERE DATE(readable_time) = %s 
-            ORDER BY timestamp ASC
-        """, (day_str,))
+                    SELECT 
+                        lat, 
+                        lon, 
+                        vel,
+                        CAST(readable_time AS CHAR) as readable_time 
+                    FROM locations 
+                    WHERE DATE(readable_time) = %s 
+                    ORDER BY timestamp ASC
+                """, (day_str,))
         points = cur.fetchall()
         cur.close()
         conn.close()
