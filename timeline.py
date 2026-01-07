@@ -174,6 +174,15 @@ def index():
         points = cur.fetchall()
         cur.close()
         conn.close()
+        
+        total_km = 0
+        for i in range(len(points) - 1):
+            d = distance_m(points[i]['lat'], points[i]['lon'], points[i+1]['lat'], points[i+1]['lon'])
+            # Tel de afstand alleen mee als deze groter is dan bijv. 5 meter 
+            # Dit filtert 'ruis' weg bij stilstand
+            if d > 5:
+                total_km += d
+        
     except Error as e:
         print(f"Database error: {e}")
 
@@ -181,12 +190,17 @@ def index():
     current_dt = datetime.strptime(day_str, '%Y-%m-%d')
     prev_day = (current_dt - timedelta(days=1)).strftime('%Y-%m-%d')
     next_day = (current_dt + timedelta(days=1)).strftime('%Y-%m-%d')
+    # In timeline.py bij de berekening:
+
+    
+
 
     return render_template(
         "timeline.html",
         day=day_str,
         prev=prev_day,
         next=next_day,
+        distance=total_km,
         points_json=json.dumps(points) # Cruciaal: zet de lijst om naar tekst
     )
 

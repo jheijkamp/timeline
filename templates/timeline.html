@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Motor Timeline - {{ day }}</title>
+    <title>Jans Timeline - {{ day }}</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -49,15 +49,21 @@
             font-weight: bold;
             line-height: 1;
         }
+        .no-data-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.2);
+            z-index: 2000;
+            text-align: center;
+        }
     </style>
 
-<div class="overlay-nav">
-    <div class="nav-content">
-        <a href="/?day={{ prev }}" class="nav-btn">❮</a>
-        <span style="font-size: 14px; font-weight: bold;">{{ day }}</span>
-        <a href="/?day={{ next }}" class="nav-btn">❯</a>
-    </div>
-</div>
+
 
 <div id="map"></div>
 
@@ -67,24 +73,35 @@
 </head>
 <body>
 
-<div class="container">
-    <header>
-        <a href="/?day={{ prev }}" class="nav-btn">← Vorige</a>
-        <h2>📅 {{ day }}</h2>
-        <a href="/?day={{ next }}" class="nav-btn">Volgende →</a>
-    </header>
-
-    {% if points_json != "[]" %}
-        <div id="map"></div>
-        <div class="stats" id="stats-box">
-            Data punten geladen: <span id="point-count">0</span>
+<div class="overlay-nav">
+        <div class="nav-content">
+            <a href="/?day={{ prev }}" class="nav-btn">❮</a>
+            <span style="font-family: sans-serif; font-size: 16px; font-weight: bold; display: flex; align-items: center; gap: 10px;">
+                <span>📅</span> {{ day }}
+                {% if distance %}
+                    <span style="color: #ccc; font-weight: normal;">|</span> 
+                    <span>🏁 {{ distance }} km</span>
+                {% endif %}
+            </span>
+            <a href="/?day={{ next }}" class="nav-btn">❯</a>
         </div>
-    {% else %}
-        <div class="no-data">
+    </div>
+
+    <div id="map"></div>
+
+    {% if points_json == "[]" %}
+        <div class="no-data-overlay">
             <p>Geen ritten gevonden voor deze dag.</p>
         </div>
     {% endif %}
-</div>
+
+<div id="map"></div>
+
+{% if points_json == "[]" %}
+    <div class="no-data-overlay">
+        <p>Geen ritten gevonden voor deze dag.</p>
+    </div>
+{% endif %}
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
@@ -114,18 +131,43 @@ if (rawData && rawData.length > 0) {
         }
 
         let fullPath = [];
+        // We tekenen lijntjes tussen elk opeenvolgend punt
+        // We tekenen lijntjes tussen elk opeenvolgend punt
         for (let i = 0; i < rawData.length - 1; i++) {
             const p1 = rawData[i];
-            const p2 = rawData[i+1];
+            const p2 = rawData[i + 1];
+            const segment = [[p1.lat, p1.lon], [p2.lat, p2.lon]];
             fullPath.push([p1.lat, p1.lon]);
 
-            L.polyline([[p1.lat, p1.lon], [p2.lat, p2.lon]], {
+            const snelheid = Math.round(p1.vel * 3.6);
+
+            // Maak de lijn aan en voeg deze direct toe aan de kaart
+            const line = L.polyline(segment, {
                 color: getColor(p1.vel * 3.6),
-                weight: 5,
+                weight: 6,
                 opacity: 0.8
             }).addTo(map);
-        }
 
+            // Voeg de hover-informatie toe
+            line.bindTooltip(
+                "<b>Tijd:</b> " + p1.readable_time + "<br>" +
+                "<b>Snelheid:</b> " + snelheid + " km/u<br>" +
+                "<b>Coördinaten:</b> " + p1.lat.toFixed(5) + ", " + p1.lon.toFixed(5),
+                {
+                    sticky: true,
+                    direction: "top",
+                    opacity: 0.9
+                }
+            );
+
+            // Visueel effect bij hover
+            line.on('mouseover', function (e) {
+                this.setStyle({ weight: 10, opacity: 1 });
+            });
+            line.on('mouseout', function (e) {
+                this.setStyle({ weight: 6, opacity: 0.8 });
+            });
+        }
         // Zorg dat de kaart de juiste grootte herkent en zoom naar de rits
         setTimeout(function() {
             map.invalidateSize();
