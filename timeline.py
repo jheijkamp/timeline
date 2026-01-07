@@ -175,14 +175,16 @@ def index():
         cur.close()
         conn.close()
         
+        # Berekening in timeline.py
         total_km = 0
         for i in range(len(points) - 1):
             d = distance_m(points[i]['lat'], points[i]['lon'], points[i+1]['lat'], points[i+1]['lon'])
-            # Tel de afstand alleen mee als deze groter is dan bijv. 5 meter 
-            # Dit filtert 'ruis' weg bij stilstand
-            if d > 5:
+            if d > 5: # Filter kleine ruis
                 total_km += d
-        
+
+        # Afronden op 2 decimaal (bijv. 28.41)
+        display_distance = round(total_km / 1000, 2)
+                
     except Error as e:
         print(f"Database error: {e}")
 
@@ -200,7 +202,7 @@ def index():
         day=day_str,
         prev=prev_day,
         next=next_day,
-        distance=total_km,
+        distance=display_distance,
         points_json=json.dumps(points) # Cruciaal: zet de lijst om naar tekst
     )
 
