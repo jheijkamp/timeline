@@ -146,7 +146,7 @@ def receive_location():
 
     except Error as e:
         print("Fout bij opslaan:", e)
-        return "error", 500
+        return "ok", 200 # Geef toch een OK terug, anders herprobeert de client
 
     return "ok", 200
 
