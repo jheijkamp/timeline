@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
 
+'''
+Dit script visualiseert de locatiegegevens uit de MariaDB database op een interactieve kaart.
+
+Gebruik:
+1. Zorg ervoor dat de databaseverbinding correct is ingesteld in config.py
+2. Voer het script uit met: python locatie_visualisatie.py
+3. Open de gegenereerde HTML-bestanden in een webbrowser
+
+'''
+
+
 import mysql.connector
 import folium
 from datetime import datetime, timedelta
